@@ -220,7 +220,7 @@ Contributions to improve this template are welcome! Please:
 
 ## License
 
-You can use this template so long as you are not a dick.
+This code is licensed under [The Modified Anti-Dick 3-Clause BSD 2 License](./LICENSE.md)
 
 ## Acknowledgments
 
