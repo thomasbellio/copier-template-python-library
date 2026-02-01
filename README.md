@@ -220,7 +220,7 @@ Contributions to improve this template are welcome! Please:
 
 ## License
 
-This code is licensed under [The Modified Anti-Dick 3-Clause BSD 2 License](./LICENSE.md)
+This code is licensed under [The Modified Anti-Dick 3-Clause BSD 2 License](https://gist.github.com/thomasbellio/99a998d391ad4cd1bf350845627e956c)
 
 ## Acknowledgments
 
