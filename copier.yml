@@ -1,0 +1,68 @@
+# Copier template configuration for Python library projects
+
+_min_copier_version: "9.0.0"
+
+# Template questions
+project_name:
+  type: str
+  help: What is your project name? (lowercase, use underscores)
+  validator: >-
+    {% if not project_name %}
+    Project name is required
+    {% elif not project_name.replace('_', '').replace('-', '').isalnum() %}
+    Project name must be alphanumeric (underscores and hyphens allowed)
+    {% endif %}
+
+project_description:
+  type: str
+  help: Short description of your project
+  default: "A Python library"
+
+author_name:
+  type: str
+  help: Author name
+  default: ""
+
+author_email:
+  type: str
+  help: Author email
+  default: ""
+
+python_version:
+  type: str
+  help: Python version
+  default: "3.14.2"
+
+min_python_version:
+  type: str
+  help: Minimum Python version (for requires-python)
+  default: "3.14"
+
+default_branch:
+  type: str
+  help: Default git branch name
+  default: "master"
+
+github_username:
+  type: str
+  help: GitHub username (for CI badges, optional)
+  default: ""
+
+_templates_suffix: .jinja
+_skip_if_exists:
+  - CHANGELOG.md
+  - tests/*
+
+_tasks:
+  - description: "Setup virtual environment"
+    command: uv venv
+  - description: "Install poetry dependencies"
+    command: uv pip install poetry && uv run --link-mode=copy poetry install
+  - description: "Initializing git repository"
+    command: "git init"
+  - description: "Installing lefthook git hooks"
+    command: "uv run --link-mode=copy lefthook install"
+  - description: "Creating initial commit"
+    command: |
+      git add .
+      git commit -m "Initial commit from template"

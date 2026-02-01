@@ -1,0 +1,15 @@
+#!/bin/bash
+
+set -e
+
+echo "🔍 Running linting and formatting checks..."
+ruff check .
+ruff format --check .
+
+echo "🔎 Running type checking..."
+mypy src/{{ project_name }}
+
+echo "🧪 Running tests..."
+pytest
+
+echo "✅ All checks passed!"
