@@ -220,7 +220,7 @@ Contributions to improve this template are welcome! Please:
 
 ## License
 
-[Specify your license here]
+You can use this template so long as you are not a dick.
 
 ## Acknowledgments
 
