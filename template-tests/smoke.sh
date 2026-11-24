@@ -648,6 +648,37 @@ scenario_hotspots() {
   [[ -f reports/hotspots.md ]] || { FAILURES+=("hotspots-file"); echo "FAIL  hotspots: no report file"; }
 }
 
+# --- copier update ---------------------------------------------------------------------------
+
+# `copier update` keeps project-owned files (_skip_if_exists) and merges local AGENTS.md edits
+# with template changes. Uses a scratch clone of the template with two committed versions.
+scenario_update() {
+  local clone="${WORK_DIR}/template-clone" target="${WORK_DIR}/update_pkg"
+  rm -rf "${clone}" "${target}"
+  git clone -q "${TEMPLATE_DIR}" "${clone}"
+  (cd "${TEMPLATE_DIR}" && git ls-files -co --exclude-standard -z) \
+    | (cd "${TEMPLATE_DIR}" && xargs -0 cp --parents -t "${clone}")
+  git -C "${clone}" add -A && git -C "${clone}" commit -qm "v1" --allow-empty && git -C "${clone}" tag v1
+  copier copy --trust --defaults --quiet --vcs-ref v1 --data project_name=update_pkg \
+    "${clone}" "${target}" >/dev/null 2>&1 || { FAILURES+=("update-gen"); echo "FAIL  update: copy"; return; }
+  cd "${target}" || return
+  printf '\n- Local convention: prefer pathlib over os.path.\n' >> AGENTS.md
+  printf '\n# Local contract marker\n' >> .importlinter
+  git add -A && git commit -qm "chore: local edits" --no-verify
+  local importlinter="{% if enable_agent_harness %}.importlinter{% endif %}.jinja"
+  local agents="{% if enable_agent_harness %}AGENTS.md{% endif %}.jinja"
+  sed -i 's/^## Commands$/## Commands\n\n- Template v2 note./' "${clone}/${agents}"
+  printf '\n# Template v2 comment\n' >> "${clone}/${importlinter}"
+  git -C "${clone}" commit -qam "v2" && git -C "${clone}" tag v2
+  OUT="$(copier update --trust --defaults --skip-tasks --quiet --vcs-ref v2 2>&1)"
+  CODE=$?
+  OUT="${OUT}"$'\n'"$(cat AGENTS.md .importlinter)"$'\n'"conflicts: $(git diff --name-only --diff-filter=U)"
+  expect update "copier update merges AGENTS.md and keeps project-owned .importlinter" 0 \
+    "Template v2 note" "Local convention: prefer pathlib" "Local contract marker" \
+    "!Template v2 comment" "!<<<<<<<"
+  cd "${PROJECT}" || exit 2
+}
+
 # The harness code must pass the harness's own rules, even though it lives outside src/.
 scenario_self() {
   fresh self
@@ -672,7 +703,7 @@ scenario_self() {
   expect self "harness code passes strict mypy, preview Ruff rules, complexipy, pydoclint" 0
 }
 
-ALL_SCENARIOS=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 15 16 17 18 19 20 21 22 23 24 25 post notice prepush delta mutation mutation_b mutation_c hotspots self)
+ALL_SCENARIOS=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 15 16 17 18 19 20 21 22 23 24 25 post notice prepush delta mutation mutation_b mutation_c hotspots update self)
 
 main() {
   generate
