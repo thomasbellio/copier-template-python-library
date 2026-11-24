@@ -422,19 +422,118 @@ scenario_23() {
   expect 23 "src change with a changelog entry" 0 "HARNESS PASSED" "!\[changelog\]"
 }
 
+# --- Claude Code hook adapters ---------------------------------------------------------------
+
+# hook <script> <json-payload>: run a hook as Claude Code would; sets OUT (stdout+stderr), CODE.
+hook() {
+  local script="$1" payload="$2"
+  OUT="$(cd "${PROJECT}" && CLAUDE_PROJECT_DIR="${PROJECT}" \
+    uv run --no-sync python ".claude/hooks/${script}" <<<"${payload}" 2>&1)"
+  CODE=$?
+}
+
+bash_payload() {
+  python3 -c 'import json, sys; print(json.dumps({"tool_name": "Bash", "tool_input": {"command": sys.argv[1]}}))' "$1"
+}
+
+file_payload() {
+  printf '{"tool_name": "%s", "tool_input": {"file_path": "%s"}}' "$1" "$2"
+}
+
+scenario_15() {
+  fresh 15
+  printf '"""Feature module."""\n%s' "${TANGLED}" | write "src/${PKG}/feature.py"
+  hook stop.py '{"hook_event_name": "Stop", "stop_hook_active": false}'
+  expect 15 "stop.py blocks on a failing gate" 2 "HARNESS FAILED" "cognitive-complexity" \
+    "Fix the blocking findings in the definitions you changed"
+}
+
+scenario_16() {
+  fresh 16
+  printf '"""Feature module."""\n%s' "${TANGLED}" | write "src/${PKG}/feature.py"
+  hook stop.py '{"hook_event_name": "Stop", "stop_hook_active": true}'
+  expect 16 "stop.py does not block twice; tells the human" 0 '^\{"systemMessage": ".*still fails'
+}
+
+scenario_17() {
+  fresh 17
+  printf '%s' "${SIMPLE_MODULE}" | write "src/${PKG}/greeting.py"
+  write "tests/test_greeting.py" <<EOF
+"""Tests for the greeting helpers."""
+
+from ${PKG}.greeting import greet
+
+
+def test_greet_names_the_person() -> None:
+  """The greeting includes the name it was given."""
+  assert greet("Ada") == "Hello, Ada"
+EOF
+  add_changelog_entry "A greeting helper"
+  hook stop.py '{"hook_event_name": "Stop", "stop_hook_active": false}'
+  expect 17a "stop.py passes a clean change and records it" 0 "!."
+  # Hide a tool. If the second run reached the gate it would report a harness error.
+  mv .venv/bin/mypy .venv/bin/mypy.hidden
+  hook stop.py '{"hook_event_name": "Stop", "stop_hook_active": false}'
+  mv .venv/bin/mypy.hidden .venv/bin/mypy
+  expect 17b "stop.py skips the tools for an unchanged passing tree" 0 "!."
+}
+
+scenario_18() {
+  fresh 18
+  hook guard_config.py "$(file_payload Edit "${PROJECT}/complexipy.toml")"
+  expect 18 "guard_config asks before editing complexipy.toml" 0 '"permissionDecision": "ask"'
+  hook guard_config.py "$(file_payload Write "${PROJECT}/.claude/hooks/stop.py")"
+  expect 18b "guard_config asks before editing .claude/" 0 '"permissionDecision": "ask"'
+  hook guard_config.py "$(file_payload Edit "${PROJECT}/src/${PKG}/__init__.py")"
+  expect 18c "guard_config ignores ordinary source files" 0 "!."
+}
+
+scenario_24() {
+  fresh 24
+  local command
+  for command in "git commit -m x" "git add ." "git -C . push" "ruff check . && git stash" \
+    "bash -c 'git commit -am wip'" "GIT_PAGER=cat git reset --hard" "git checkout -- src"; do
+    hook guard_git.py "$(bash_payload "${command}")"
+    expect 24 "guard_git asks for: ${command}" 0 '"permissionDecision": "ask"'
+  done
+}
+
+scenario_25() {
+  fresh 25
+  local command
+  for command in "git status" "git diff" "git log --grep commit" "git stash list" \
+    "git checkout -b feature" "echo commit && ls" "git tag"; do
+    hook guard_git.py "$(bash_payload "${command}")"
+    expect 25 "guard_git lets through: ${command}" 0 "!."
+  done
+}
+
+scenario_post() {
+  fresh post
+  printf '"""Feature module."""\n%s' "${TANGLED}" | write "src/${PKG}/feature.py"
+  hook post_edit.py "$(file_payload Edit "${PROJECT}/src/${PKG}/feature.py")"
+  expect post "post_edit reports findings for the edited file" 2 "cognitive-complexity"
+  hook post_edit.py "$(file_payload Edit "${PROJECT}/README.md")"
+  expect post-b "post_edit ignores non-Python files" 0 "!."
+}
+
 # The harness code must pass the harness's own rules, even though it lives outside src/.
 scenario_self() {
   fresh self
   local bin=".venv/bin" problems=0 preview="PLR0904,PLR0914,PLR0916,PLR0917,PLR1702"
   OUT="$(
     {
-      MYPYPATH=scripts "${bin}/mypy" --strict --warn-unreachable --disallow-any-explicit \
-        --enable-error-code ignore-without-code --enable-error-code redundant-expr \
-        --enable-error-code truthy-bool -p harness || echo "SELF-FAIL mypy"
+      local strict=(--strict --warn-unreachable --disallow-any-explicit
+        --enable-error-code ignore-without-code --enable-error-code redundant-expr
+        --enable-error-code truthy-bool)
+      MYPYPATH=scripts "${bin}/mypy" "${strict[@]}" -p harness || echo "SELF-FAIL mypy harness"
+      MYPYPATH=scripts "${bin}/mypy" "${strict[@]}" .claude/hooks || echo "SELF-FAIL mypy hooks"
       "${bin}/ruff" check --preview --config 'lint.explicit-preview-rules = true' \
-        --extend-select "${preview}" scripts || echo "SELF-FAIL ruff"
-      "${bin}/complexipy" scripts --max-complexity-allowed 15 --quiet || echo "SELF-FAIL complexipy"
-      "${bin}/pydoclint" --config=pyproject.toml --quiet scripts 2>&1 || echo "SELF-FAIL pydoclint"
+        --extend-select "${preview}" scripts .claude || echo "SELF-FAIL ruff"
+      "${bin}/complexipy" scripts .claude --max-complexity-allowed 15 --quiet \
+        || echo "SELF-FAIL complexipy"
+      "${bin}/pydoclint" --config=pyproject.toml --quiet scripts .claude/hooks 2>&1 \
+        || echo "SELF-FAIL pydoclint"
     } 2>&1
   )"
   CODE=0
@@ -442,7 +541,7 @@ scenario_self() {
   expect self "harness code passes strict mypy, preview Ruff rules, complexipy, pydoclint" 0
 }
 
-ALL_SCENARIOS=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 19 20 21 22 23 self)
+ALL_SCENARIOS=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 15 16 17 18 19 20 21 22 23 24 25 post self)
 
 main() {
   generate
