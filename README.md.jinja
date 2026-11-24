@@ -102,7 +102,23 @@ Or run all checks at once:
 ./scripts/build.sh
 ```
 
-## Contributing
+{% if enable_agent_harness %}## Agent harness
+
+This project ships an agent harness: maintainability checks that run only on new and changed
+code, so agents (and people) fix what they touch without being pushed into codebase-wide
+refactors.
+
+```bash
+./scripts/check.sh            # gate on code changed since the merge-base
+./scripts/check.sh --all      # whole-codebase audit, report only
+./scripts/check.sh --mutation # mutation testing on changed lines (slow)
+./scripts/hotspots.sh         # churn x complexity report
+```
+
+`AGENTS.md` is the guide for coding agents. See [docs/agent-harness.md](docs/agent-harness.md)
+for how the checks work and how to tune them.
+
+{% endif %}## Contributing
 
 1. Fork the repository
 2. Create a feature branch
