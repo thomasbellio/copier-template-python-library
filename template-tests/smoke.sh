@@ -566,6 +566,119 @@ scenario_delta() {
     "Complexity diff" "feature.py::tangled"
 }
 
+# --- mutation testing and hotspots -----------------------------------------------------------
+
+DISCOUNT_MODULE='"""Bulk discounts."""
+
+
+def discount(qty: int) -> float:
+  """Discount rate for an order quantity: 10% above ten items."""
+  if qty > 10:
+    return 0.1
+  return 0.0
+'
+
+scenario_mutation() {
+  fresh mutation
+  printf '%s' "${DISCOUNT_MODULE}" | write "src/${PKG}/discount.py"
+  write "tests/test_discount.py" <<EOF
+"""Weak tests: they only check the type, so mutants survive."""
+
+from ${PKG}.discount import discount
+
+
+def test_discount_is_a_rate() -> None:
+  """The discount is a float."""
+  assert isinstance(discount(5), float)
+EOF
+  check --mutation
+  expect mutation "weak tests let mutants survive on new, untracked files" 1 \
+    "MUTATION FAILED" 'discount.py:[0-9]+  `if qty > 10:` survives [0-9]+ mutation' \
+    '\[core/[A-Za-z_]+\] -> `' "Fix: Add an assertion"
+  local index_state
+  index_state="$(git status --porcelain -- "src/${PKG}/discount.py")"
+  OUT="${index_state}"
+  CODE=0
+  expect mutation-index "the real git index is untouched (file still untracked)" 0 '^\?\? '
+}
+
+scenario_mutation_b() {
+  fresh mutation-b
+  printf '%s' "${DISCOUNT_MODULE}" | write "src/${PKG}/discount.py"
+  write "tests/test_discount.py" <<EOF
+"""Tests pinning the discount boundary."""
+
+from ${PKG}.discount import discount
+
+
+def test_no_discount_up_to_ten_items() -> None:
+  """Ten items or fewer get no discount."""
+  assert discount(10) == 0.0
+  assert discount(1) == 0.0
+
+
+def test_ten_percent_above_ten_items() -> None:
+  """More than ten items get 10%."""
+  assert discount(11) == 0.1
+EOF
+  check --mutation
+  expect mutation-b "boundary tests kill the mutants" 0 "MUTATION PASSED"
+}
+
+scenario_mutation_c() {
+  fresh mutation-c
+  check --mutation
+  expect mutation-c "no source change means nothing to mutate" 0 \
+    "MUTATION PASSED: no changed source files"
+}
+
+scenario_hotspots() {
+  fresh hotspots
+  local round
+  for round in 1 2 3; do
+    printf '"""Feature module."""\n%s\n\nREVISION = %s\n' "${TANGLED}" "${round}" \
+      | write "src/${PKG}/feature.py"
+    git add -A
+    git commit -q --no-verify -m "chore: revision ${round}"
+  done
+  OUT="$(cd "${PROJECT}" && ./scripts/hotspots.sh 2>&1)"
+  CODE=$?
+  expect hotspots "hotspots ranks a churned, complex file first" 0 \
+    "\| 1 \| \`src/${PKG}/feature.py\` \| 3 \| 21 \| 63 \|" "\`tangled\` \(21\)"
+  [[ -f reports/hotspots.md ]] || { FAILURES+=("hotspots-file"); echo "FAIL  hotspots: no report file"; }
+}
+
+# --- copier update ---------------------------------------------------------------------------
+
+# `copier update` keeps project-owned files (_skip_if_exists) and merges local AGENTS.md edits
+# with template changes. Uses a scratch clone of the template with two committed versions.
+scenario_update() {
+  local clone="${WORK_DIR}/template-clone" target="${WORK_DIR}/update_pkg"
+  rm -rf "${clone}" "${target}"
+  git clone -q "${TEMPLATE_DIR}" "${clone}"
+  (cd "${TEMPLATE_DIR}" && git ls-files -co --exclude-standard -z) \
+    | (cd "${TEMPLATE_DIR}" && xargs -0 cp --parents -t "${clone}")
+  git -C "${clone}" add -A && git -C "${clone}" commit -qm "v1" --allow-empty && git -C "${clone}" tag v1
+  copier copy --trust --defaults --quiet --vcs-ref v1 --data project_name=update_pkg \
+    "${clone}" "${target}" >/dev/null 2>&1 || { FAILURES+=("update-gen"); echo "FAIL  update: copy"; return; }
+  cd "${target}" || return
+  printf '\n- Local convention: prefer pathlib over os.path.\n' >> AGENTS.md
+  printf '\n# Local contract marker\n' >> .importlinter
+  git add -A && git commit -qm "chore: local edits" --no-verify
+  local importlinter="{% if enable_agent_harness %}.importlinter{% endif %}.jinja"
+  local agents="{% if enable_agent_harness %}AGENTS.md{% endif %}.jinja"
+  sed -i 's/^## Commands$/## Commands\n\n- Template v2 note./' "${clone}/${agents}"
+  printf '\n# Template v2 comment\n' >> "${clone}/${importlinter}"
+  git -C "${clone}" commit -qam "v2" && git -C "${clone}" tag v2
+  OUT="$(copier update --trust --defaults --skip-tasks --quiet --vcs-ref v2 2>&1)"
+  CODE=$?
+  OUT="${OUT}"$'\n'"$(cat AGENTS.md .importlinter)"$'\n'"conflicts: $(git diff --name-only --diff-filter=U)"
+  expect update "copier update merges AGENTS.md and keeps project-owned .importlinter" 0 \
+    "Template v2 note" "Local convention: prefer pathlib" "Local contract marker" \
+    "!Template v2 comment" "!<<<<<<<"
+  cd "${PROJECT}" || exit 2
+}
+
 # The harness code must pass the harness's own rules, even though it lives outside src/.
 scenario_self() {
   fresh self
@@ -590,7 +703,7 @@ scenario_self() {
   expect self "harness code passes strict mypy, preview Ruff rules, complexipy, pydoclint" 0
 }
 
-ALL_SCENARIOS=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 15 16 17 18 19 20 21 22 23 24 25 post notice prepush delta self)
+ALL_SCENARIOS=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 15 16 17 18 19 20 21 22 23 24 25 post notice prepush delta mutation mutation_b mutation_c hotspots update self)
 
 main() {
   generate

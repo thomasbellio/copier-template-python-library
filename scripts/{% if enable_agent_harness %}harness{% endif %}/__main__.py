@@ -14,6 +14,7 @@ from pathlib import Path
 
 from harness.config import Config, load_config
 from harness.errors import HarnessError
+from harness.mutation import run_mutation
 from harness.report import Finding, Summary, counts, render_json, render_text
 from harness.runners import RUNNERS, Context, Outcome, Runner
 from harness.scope import ChangeSet, compute_changes, git, resolve_base, whole_project
@@ -28,6 +29,9 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
   mode = parser.add_mutually_exclusive_group()
   mode.add_argument("--file", help="fast checks for one file (used by post-edit hooks)")
   mode.add_argument("--all", action="store_true", help="audit the whole codebase; always exits 0")
+  mode.add_argument(
+    "--mutation", action="store_true", help="mutation testing on changed lines (slow)"
+  )
   parser.add_argument("--json", action="store_true", help="emit findings as JSON")
   parser.add_argument("--timings", action="store_true", help="print per-tool timings to stderr")
   return parser.parse_args(argv)
@@ -98,6 +102,8 @@ def run(args: argparse.Namespace) -> int:
   os.chdir(root)
   config = load_config(root)
   changes = build_changes(config, args)
+  if args.mutation:
+    return run_mutation(config, changes)
   if not changes.files:
     print(f"HARNESS PASSED: no changed files (base: {changes.base.label})")
     return EXIT_PASS

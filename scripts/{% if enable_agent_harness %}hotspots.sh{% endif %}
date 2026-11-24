@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Churn x complexity report for the agent harness. Report only; writes reports/hotspots.md.
+#
+#   scripts/hotspots.sh [--days 90] [--top 10] [--output reports/hotspots.md]
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "${script_dir}/.." && pwd)"
+
+if [[ -n "${VIRTUAL_ENV:-}" && -x "${VIRTUAL_ENV}/bin/python" ]]; then
+  python="${VIRTUAL_ENV}/bin/python"
+elif [[ -x "${root}/.venv/bin/python" ]]; then
+  python="${root}/.venv/bin/python"
+else
+  python="python3"
+fi
+
+PYTHONPATH="${script_dir}${PYTHONPATH:+:${PYTHONPATH}}" exec "${python}" -m harness.hotspots "$@"

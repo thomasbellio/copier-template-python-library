@@ -1,0 +1,14 @@
+# Mutation testing, run by `scripts/check.sh --mutation` on changed lines only.
+# The harness replaces the git-filter branch with the merge-base it resolves, and makes new
+# files visible to the filter; the branch below is the fallback for running cosmic-ray by hand.
+[cosmic-ray]
+module-path = "src/{{ project_name }}"
+timeout = 30.0
+excluded-modules = []
+test-command = "pytest -x -q"
+
+[cosmic-ray.distributor]
+name = "local"
+
+[cosmic-ray.filters.git-filter]
+branch = "{{ default_branch }}"

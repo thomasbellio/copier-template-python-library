@@ -155,4 +155,9 @@ uv.lock
 .complexipy_cache/
 .import_linter_cache/
 .pyscn/
+reports/
+{%- if enable_claude_adapter %}
+# Personal Claude Code settings; .claude/settings.json is shared and committed.
+.claude/settings.local.json
+{%- endif %}
 {%- endif %}

@@ -70,9 +70,27 @@ docstring_style:
   when: "{{ enable_agent_harness }}"
 
 _templates_suffix: .jinja
+# Setting _exclude replaces copier's defaults, so they are repeated here.
+_exclude:
+  - copier.yaml
+  - copier.yml
+  - "~*"
+  - "*.py[co]"
+  - __pycache__
+  - .git
+  - .DS_Store
+  - .svn
+  # Template-repository material, not part of generated projects.
+  - briefs
+  - template-tests
+# Files the project owns after generation; `copier update` leaves them alone.
 _skip_if_exists:
   - CHANGELOG.md
   - tests/*
+  - .importlinter
+  - vulture_whitelist.py
+  - docs/troubleshooting.md
+  - docs/adr/*
 
 _tasks:
   - description: "Setup virtual environment"
