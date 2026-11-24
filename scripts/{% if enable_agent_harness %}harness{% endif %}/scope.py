@@ -5,6 +5,7 @@ function or class whose line span contains such a line. New files are entirely i
 """
 
 import ast
+import hashlib
 import os
 import re
 import subprocess
@@ -234,3 +235,16 @@ def whole_project(base: Base, scope_dirs: tuple[str, ...]) -> ChangeSet:
     if change is not None:
       files[path] = change
   return ChangeSet(base, files, whole_project=True)
+
+
+def fingerprint(base: Base) -> str:
+  """Hash everything that can change the gate's result: the base, the diff and untracked files."""
+  digest = hashlib.sha256(base.ref.encode())
+  digest.update(git("diff", "--binary", "--no-color", "--no-ext-diff", base.ref).encode())
+  for path in sorted(untracked_files((".",))):
+    digest.update(path.encode())
+    try:
+      digest.update(Path(path).read_bytes())
+    except OSError:
+      digest.update(b"<unreadable>")
+  return digest.hexdigest()

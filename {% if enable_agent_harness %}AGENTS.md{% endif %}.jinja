@@ -1,0 +1,85 @@
+# Agent instructions
+
+This file is the canonical guide for any coding agent working in this repository.
+
+## Commands
+
+- `uv run ./scripts/check.sh` checks the code you changed. Run it before you say a task is done.
+- `uv run ./scripts/check.sh --file <path>` checks one file quickly.
+- `uv run ./scripts/build.sh` runs lint, format check, type check, tests and the harness. This is what the commit hook and CI run.
+- `uv run ./scripts/check.sh --mutation` runs mutation testing on your changed lines. Slow; run it when you add or change tests.
+
+## The working loop
+
+1. Before writing a new function or class, search for existing code that already does the job, by name and by behaviour. Reuse or extend it. Say in your final message what you searched for.
+2. Make the change, with tests.
+3. Run `scripts/check.sh`. Fix every blocking finding.
+4. For each advisory finding, fix it or explain in your final message why it stands.
+5. Run `scripts/build.sh`. Only then report the task as done.
+
+## Scope of refactoring
+
+The harness checks only definitions you changed. When you touch a function or class, you own its findings, including ones that were there before you.
+
+- Do fix findings in functions and classes you changed.
+- Do not refactor code you did not need to touch for the task.
+- Do not start codebase-wide clean-ups, even if `check.sh --all` shows problems.
+- If fixing a finding needs changes beyond the definitions you touched and their direct callers, stop. Report the finding, what the fix would involve, and let the human decide.
+
+## Never do these to get a passing result
+
+- Edit thresholds or harness config (`harness.toml`, `complexipy.toml`, `.pyscn.toml`, `.importlinter`, `.claude/`, `scripts/harness/`, Ruff or mypy settings).
+- Add `# noqa`, `# type: ignore` or `# pragma: no cover` without a specific code and a `# reason:` comment. Suppression is a last resort.
+- Delete, skip or weaken a test.
+- Split a function into meaningless fragments to get under a limit. Extract helpers that have a name and a purpose.
+- Bypass hooks with `--no-verify`.
+
+If you believe a threshold or rule is wrong for a case, say so and propose the change. Do not make it.
+
+## Code rules the harness enforces
+
+- **Complexity:** cognitive complexity ≤ 15 and cyclomatic ≤ 10 per function. At most 5 arguments, 12 branches, 6 returns, 50 statements.
+- **Architecture:** imports must satisfy the contracts in `.importlinter`. No import cycles.
+- **Classes:** keep coupling low and give each class one responsibility.
+- **Dead code:** remove helpers, imports and variables you stop using. Do not leave commented-out code.
+- **Exceptions:** catch specific exceptions. Never swallow one. Re-raise with `raise ... from err`. Do not return a default from a broad handler to hide a failure. A function that must catch everything, such as a CLI entry point, carries `# noqa: BLE001  # reason: <why>` on the handler.
+- **Types:** full annotations, no explicit `Any`.
+- **Docstrings:** required on every public module, class, function and method, in {{ docstring_style }} style. Say what it does and what a caller must know; do not restate the name. A one-line summary is enough for a simple function. If you document arguments, returns or raises, they must match the signature. Types go in the signature, not the docstring.
+- **Tests:** assert on behaviour and outcomes. A test that only executes code without asserting anything is not a test. Mock at boundaries, not internals.
+
+## Readability
+
+- Names say what a thing is for.
+- Comments explain why, never what the next line does.
+- Prefer the simple direct solution. No speculative abstractions, no single-implementation interfaces, no unused configuration options.
+
+## Git and commits
+
+- Do not stage, commit, push, tag, stash or discard changes unless the user explicitly asks you to. Leave every change unstaged in the working tree for the user to review and commit.
+- A request to commit covers that commit only. It is not standing permission for later ones.
+- Read-only git commands (`status`, `diff`, `log`, `show`, `blame`) are always fine.
+- At the end of every task, propose a commit message in Conventional Commits format (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`). If the work would be clearer as several commits, propose each message with the files it covers.
+- The body of a `fix:` message has three lines: `Symptom:`, `Cause:`, `Fix:`.
+
+## Recording changes
+
+- For any change a user of this package would notice, add one line under `[Unreleased]` in `CHANGELOG.md`, in the matching category (Added, Changed, Deprecated, Removed, Fixed, Security). Describe the effect, not the code edit.
+- Skip refactors, tests and tooling changes.
+- Never edit released sections or change the version number.
+
+## Fixing bugs
+
+1. Before debugging, search `docs/troubleshooting.md` and `git log --grep` for the error message or symptom.
+2. Write a test that reproduces the bug and fails. Then fix the bug. The test's docstring states the symptom.
+3. If the lesson can be enforced by a test, lint rule or import contract, add that instead of a note.
+4. Add an entry to `docs/troubleshooting.md` only if the cause was not apparent from the error, or the problem could recur. Follow the format at the top of that file, and quote the exact error text.
+5. If you find an entry that describes code which no longer exists, remove it.
+6. Record a design decision that future work must respect as an ADR in `docs/adr/`, copied from `0000-template.md` and numbered in sequence.
+
+## Final message
+
+State: what changed, what you searched for before adding new code, the result of `scripts/build.sh`, any advisory you left and why, any finding you could not fix within scope, and your proposed commit message or messages.
+
+## Project-specific notes
+
+<!-- Add project conventions below. -->
