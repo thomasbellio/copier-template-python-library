@@ -517,6 +517,55 @@ scenario_post() {
   expect post-b "post_edit ignores non-Python files" 0 "!."
 }
 
+# --- lefthook and CI adapters ----------------------------------------------------------------
+
+notice() {
+  OUT="$(cd "${PROJECT}" && PYTHONPATH=scripts uv run --no-sync python -m harness.ci_notice 2>&1)"
+  CODE=$?
+}
+
+scenario_notice() {
+  fresh notice
+  printf '%s' "${SIMPLE_MODULE}" | write "src/${PKG}/greeting.py"
+  notice
+  expect notice "CI notice stays quiet for an ordinary change" 0 "No harness configuration changed"
+  sed -i 's/^max-complexity-allowed = 15$/max-complexity-allowed = 25/' complexipy.toml
+  sed -i 's/^line-length = 100$/line-length = 120/' pyproject.toml
+  notice
+  expect notice-b "CI notice flags guarded files and tool tables" 0 \
+    "::notice title=Agent harness configuration changed::" "complexipy.toml" \
+    "pyproject.toml \[tool.ruff\]" "!\[tool.mypy\]"
+}
+
+# A commit made with --no-verify is still stopped when it is pushed.
+scenario_prepush() {
+  fresh prepush
+  local remote="${WORK_DIR}/remote.git"
+  rm -rf "${remote}"
+  git init -q --bare "${remote}"
+  git remote remove origin 2>/dev/null
+  git remote add origin "${remote}"
+  git push -q origin "${DEFAULT_BRANCH}" 2>/dev/null
+  printf '"""Feature module."""\n%s' "${TANGLED}" | write "src/${PKG}/feature.py"
+  git add -A
+  git commit -q --no-verify -m "feat: tangled"
+  OUT="$(git push origin "scenario-prepush" 2>&1)"
+  CODE=$?
+  [[ "${CODE}" != 0 ]] && CODE=1
+  expect prepush "lefthook pre-push refuses a --no-verify commit that fails the gate" 1 \
+    "cognitive-complexity"
+  git remote remove origin
+}
+
+scenario_delta() {
+  fresh delta
+  printf '"""Feature module."""\n%s' "${TANGLED}" | write "src/${PKG}/feature.py"
+  OUT="$(.venv/bin/complexipy src --diff-only "${INITIAL}" --color no 2>&1 | sed -n '/Complexity diff/,$p')"
+  CODE=0
+  expect delta "complexity delta for the PR summary lists the new function" 0 \
+    "Complexity diff" "feature.py::tangled"
+}
+
 # The harness code must pass the harness's own rules, even though it lives outside src/.
 scenario_self() {
   fresh self
@@ -541,7 +590,7 @@ scenario_self() {
   expect self "harness code passes strict mypy, preview Ruff rules, complexipy, pydoclint" 0
 }
 
-ALL_SCENARIOS=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 15 16 17 18 19 20 21 22 23 24 25 post self)
+ALL_SCENARIOS=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 15 16 17 18 19 20 21 22 23 24 25 post notice prepush delta self)
 
 main() {
   generate

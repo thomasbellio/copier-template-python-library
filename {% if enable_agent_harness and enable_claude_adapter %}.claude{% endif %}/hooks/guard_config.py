@@ -7,31 +7,28 @@ agents legitimately edit dependencies; CI flags changes to its tool sections ins
 import json
 import os
 import sys
-from fnmatch import fnmatch
 from pathlib import Path
 
-GUARDED = (
-  "harness.toml",
-  "complexipy.toml",
-  ".pyscn.toml",
-  ".importlinter",
-  "cosmic-ray.toml",
-  "vulture_whitelist.py",
-  "lefthook.yml",
-  "scripts/check.sh",
-  "scripts/harness/*",
-  ".claude/*",
-)
+
+def project_root(payload: dict[str, object]) -> Path:
+  """The project directory, from the environment or the hook payload."""
+  return Path(os.environ.get("CLAUDE_PROJECT_DIR") or str(payload.get("cwd") or ".")).resolve()
 
 
-def guarded(relative: str) -> bool:
-  """Whether a repo-relative path is harness configuration."""
-  return any(fnmatch(relative, pattern) for pattern in GUARDED)
+def guarded(root: Path, relative: str) -> bool:
+  """Whether a path is harness configuration, per the shared list in scripts/harness."""
+  # The harness package lives in scripts/, which is only known once the root is.
+  sys.path.insert(0, str(root / "scripts"))
+  try:
+    from harness.guarded import is_guarded
+  except ImportError:
+    # Without the harness the list is unknown; asking is the safe answer.
+    return True
+  return is_guarded(relative)
 
 
-def target(payload: dict[str, object]) -> str | None:
+def target(payload: dict[str, object], root: Path) -> str | None:
   """Repo-relative path the tool call would write, or None if outside the project."""
-  root = Path(os.environ.get("CLAUDE_PROJECT_DIR") or str(payload.get("cwd") or ".")).resolve()
   tool_input = payload.get("tool_input")
   raw = tool_input.get("file_path") if isinstance(tool_input, dict) else None
   if not isinstance(raw, str):
@@ -49,8 +46,9 @@ def main() -> int:
     payload = json.load(sys.stdin)
   except json.JSONDecodeError:
     return 0
-  relative = target(payload)
-  if relative is None or not guarded(relative):
+  root = project_root(payload)
+  relative = target(payload, root)
+  if relative is None or not guarded(root, relative):
     return 0
   reason = (
     f"{relative} is agent-harness configuration. Agents must not relax a gate to pass it; "
