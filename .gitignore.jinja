@@ -148,3 +148,9 @@ cython_debug/
 # uv
 .uv/
 uv.lock
+{%- if enable_agent_harness %}
+
+# Agent harness
+.harness/
+.complexipy_cache/
+{%- endif %}

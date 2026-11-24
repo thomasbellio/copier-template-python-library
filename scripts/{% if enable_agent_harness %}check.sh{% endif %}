@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Single entry point for the agent harness. See docs/agent-harness.md.
+#
+#   scripts/check.sh               full gate on code changed since the merge-base
+#   scripts/check.sh --file PATH   fast checks for one file
+#   scripts/check.sh --all         whole-codebase audit, report only
+#   scripts/check.sh --json        findings as JSON
+#
+# Exit codes: 0 passed, 1 gate failed, 3 harness or tool error.
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "${script_dir}/.." && pwd)"
+
+if [[ -n "${VIRTUAL_ENV:-}" && -x "${VIRTUAL_ENV}/bin/python" ]]; then
+  python="${VIRTUAL_ENV}/bin/python"
+elif [[ -x "${root}/.venv/bin/python" ]]; then
+  python="${root}/.venv/bin/python"
+else
+  python="python3"
+fi
+
+PYTHONPATH="${script_dir}${PYTHONPATH:+:${PYTHONPATH}}" exec "${python}" -m harness "$@"

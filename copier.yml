@@ -48,6 +48,27 @@ github_username:
   help: GitHub username (for CI badges, optional)
   default: ""
 
+enable_agent_harness:
+  type: bool
+  help: Add the agent harness (quality gates on changed code, AGENTS.md, hook adapters)?
+  default: true
+
+enable_claude_adapter:
+  type: bool
+  help: Add the Claude Code adapter (.claude/ hooks and CLAUDE.md)?
+  default: true
+  when: "{{ enable_agent_harness }}"
+
+docstring_style:
+  type: str
+  help: Docstring style checked by Ruff and pydoclint
+  choices:
+    - google
+    - numpy
+    - sphinx
+  default: google
+  when: "{{ enable_agent_harness }}"
+
 _templates_suffix: .jinja
 _skip_if_exists:
   - CHANGELOG.md
@@ -56,10 +77,34 @@ _skip_if_exists:
 _tasks:
   - description: "Setup virtual environment"
     command: uv venv
+  # Package authors: each answered field wins, a missing one comes from git config,
+  # and with no name from either source the authors line is left out (Poetry needs a name).
+  - description: "Filling package authors from git config"
+    when: "{{ not author_name or not author_email }}"
+    command: |
+      .venv/bin/python - <<'PY'
+      import json
+      import subprocess
+      from pathlib import Path
+
+      def git_config(key):
+          result = subprocess.run(["git", "config", "--get", key], capture_output=True, text=True)
+          return result.stdout.strip() if result.returncode == 0 else ""
+
+      name = {{ author_name | tojson }} or git_config("user.name")
+      email = {{ author_email | tojson }} or git_config("user.email")
+      path = Path("pyproject.toml")
+      lines = [l for l in path.read_text().splitlines(keepends=True) if not l.startswith("authors = ")]
+      if name:
+          author = f"{name} <{email}>" if email else name
+          at = next(i for i, l in enumerate(lines) if l.startswith("description = ")) + 1
+          lines.insert(at, f"authors = [{json.dumps(author)}]\n")
+      path.write_text("".join(lines))
+      PY
   - description: "Install poetry dependencies"
     command: uv pip install poetry && uv run --link-mode=copy poetry install
   - description: "Initializing git repository"
-    command: "git init"
+    command: "git init -b {{ default_branch }}"
   - description: "Installing lefthook git hooks"
     command: "uv run --link-mode=copy lefthook install"
   - description: "Creating initial commit"
