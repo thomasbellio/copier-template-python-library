@@ -3,4 +3,10 @@
 Add a name here only when it is used in a way vulture cannot see (for example, called by a
 framework or looked up dynamically), with a comment saying why. Regenerate candidates with
 `vulture src tests --make-whitelist` and review every entry before keeping it.
+
+Entries are bare names, one per line (vulture's whitelist format); Ruff's F821 and B018 are
+ignored for this file in pyproject.toml. For example:
+
+  # pytest: fixture requested only for its side effect.
+  stubbed_pipeline
 """

@@ -350,6 +350,43 @@ scenario_14() {
     "HARNESS ERROR: required tool 'vulture' was not found" "uv run poetry install" "!HARNESS PASSED"
 }
 
+# A fixture requested only for its side effect is dead code to vulture until whitelisted, and
+# the whitelist's bare names must pass the project's own `ruff check .`.
+scenario_whitelist() {
+  fresh whitelist
+  write "tests/test_side_effect.py" <<'EOF'
+"""A test that requests a fixture only for its side effect."""
+
+import logging
+from collections.abc import Iterator
+
+import pytest
+
+
+@pytest.fixture
+def quiet_logging() -> Iterator[None]:
+  """Silence logging for the duration of a test."""
+  logging.disable(logging.CRITICAL)
+  yield
+  logging.disable(logging.NOTSET)
+
+
+def test_runs_quietly(quiet_logging: None) -> None:
+  """Logging is disabled while the fixture is active."""
+  assert logging.root.manager.disable == logging.CRITICAL
+EOF
+  check
+  expect whitelist "a side-effect fixture parameter is blocked as dead code" 1 \
+    "\[dead-code\] unused variable 'quiet_logging'"
+  printf '\n# pytest: fixture requested only for its side effect.\nquiet_logging\n' \
+    >> vulture_whitelist.py
+  check
+  expect whitelist-b "whitelisting the fixture name clears it" 0 "HARNESS PASSED" "!dead-code"
+  OUT="$(.venv/bin/ruff check . 2>&1)"
+  CODE=$?
+  expect whitelist-c "bare names in vulture_whitelist.py pass ruff check ." 0 "All checks passed"
+}
+
 scenario_19() {
   fresh 19
   write "src/${PKG}/feature.py" <<'EOF'
@@ -713,7 +750,7 @@ scenario_self() {
   expect self "harness code passes strict mypy, preview Ruff rules, complexipy, pydoclint" 0
 }
 
-ALL_SCENARIOS=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 post notice prepush delta mutation mutation_b mutation_c hotspots update self)
+ALL_SCENARIOS=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 whitelist 19 20 21 22 23 24 25 post notice prepush delta mutation mutation_b mutation_c hotspots update self)
 
 main() {
   generate

@@ -90,6 +90,7 @@ convention = "{{ docstring_style }}"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["PLR0913", "PLR0915", "PLR0917", "D", "S110"]
+"vulture_whitelist.py" = ["F821", "B018"]  # bare names are vulture's whitelist format
 {%- endif %}
 
 [tool.ruff.format]

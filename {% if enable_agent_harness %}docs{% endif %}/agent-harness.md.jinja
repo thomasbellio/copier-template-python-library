@@ -209,8 +209,9 @@ branch, and copy the harness files from it, so the names are already right.
    `pyscn`, `import-linter`, `vulture`, `cosmic-ray`, `pydoclint`.
 4. **Merge config into `pyproject.toml`:** `[tool.ruff.lint.mccabe]`,
    `[tool.ruff.lint.pylint]`, `[tool.ruff.lint.pydocstyle]` (omit for sphinx style, which Ruff
-   does not support), the `"tests/**"` entry of `[tool.ruff.lint.per-file-ignores]` (so tests
-   need no docstrings) and `[tool.pydoclint]`. Do **not** add the harness rules to `select`;
+   does not support), the `"tests/**"` and `"vulture_whitelist.py"` entries of
+   `[tool.ruff.lint.per-file-ignores]` (so tests need no docstrings, and the whitelist's bare
+   names pass `ruff check .`) and `[tool.pydoclint]`. Do **not** add the harness rules to `select`;
    the harness adds them itself, so the existing whole-project lint is unaffected. Do not turn
    on strict mypy globally unless the project is already clean: put the strict flags in
    `harness.toml` under `[mypy] flags` (an example is in the file), so they apply to changed
@@ -220,6 +221,9 @@ branch, and copy the harness files from it, so the names are already right.
    `import-cycle` findings, and set `allowed_cycles` in `harness.toml` to it. Both then act as
    ratchets: lower them as you fix things.
 6. **Seed the vulture whitelist:** `vulture src tests --make-whitelist`, then review every entry.
+   Keep names used in ways vulture cannot see (pytest fixtures requested for their side
+   effects, autouse fixtures, pydantic `model_config` and validators), each with a comment;
+   leave out anything that is really dead.
 7. **Wire the adapters:** add `./scripts/check.sh` to the end of your build script (or as a
    lefthook `pre-commit` command), add the `pre-push` command, and apply the CI changes above
    (`fetch-depth: 0`, `HARNESS_BASE`, the notice, complexity summary and mutation job).
