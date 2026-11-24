@@ -1,0 +1,42 @@
+name: Hotspots Report
+
+# Weekly churn x complexity report (report only). Download it from the run's artifacts.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  hotspots:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history, so churn can be counted.
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install {{ python_version }}
+
+      - name: Install dependencies
+        run: |
+          uv venv
+          uv pip install poetry
+          uv run poetry install
+
+      - name: Build the hotspots report
+        run: |
+          uv run ./scripts/hotspots.sh
+          cat reports/hotspots.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the report
+        uses: actions/upload-artifact@v4
+        with:
+          name: hotspots
+          path: reports/hotspots.md

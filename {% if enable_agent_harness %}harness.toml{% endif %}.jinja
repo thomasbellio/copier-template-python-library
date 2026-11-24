@@ -50,3 +50,8 @@ lcom_block_above = 5
 lcom_advise_above = 2
 # Structural clone pairs at or above this similarity are reported as advisories.
 clone_similarity = 0.80
+
+[mutation]
+# scripts/check.sh --mutation fails when more than this share of the executed mutants on
+# changed lines survive. The CI job is advisory (continue-on-error) until the rate is stable.
+max_survival_percent = 20

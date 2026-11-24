@@ -566,6 +566,88 @@ scenario_delta() {
     "Complexity diff" "feature.py::tangled"
 }
 
+# --- mutation testing and hotspots -----------------------------------------------------------
+
+DISCOUNT_MODULE='"""Bulk discounts."""
+
+
+def discount(qty: int) -> float:
+  """Discount rate for an order quantity: 10% above ten items."""
+  if qty > 10:
+    return 0.1
+  return 0.0
+'
+
+scenario_mutation() {
+  fresh mutation
+  printf '%s' "${DISCOUNT_MODULE}" | write "src/${PKG}/discount.py"
+  write "tests/test_discount.py" <<EOF
+"""Weak tests: they only check the type, so mutants survive."""
+
+from ${PKG}.discount import discount
+
+
+def test_discount_is_a_rate() -> None:
+  """The discount is a float."""
+  assert isinstance(discount(5), float)
+EOF
+  check --mutation
+  expect mutation "weak tests let mutants survive on new, untracked files" 1 \
+    "MUTATION FAILED" 'discount.py:[0-9]+  `if qty > 10:` survives [0-9]+ mutation' \
+    '\[core/[A-Za-z_]+\] -> `' "Fix: Add an assertion"
+  local index_state
+  index_state="$(git status --porcelain -- "src/${PKG}/discount.py")"
+  OUT="${index_state}"
+  CODE=0
+  expect mutation-index "the real git index is untouched (file still untracked)" 0 '^\?\? '
+}
+
+scenario_mutation_b() {
+  fresh mutation-b
+  printf '%s' "${DISCOUNT_MODULE}" | write "src/${PKG}/discount.py"
+  write "tests/test_discount.py" <<EOF
+"""Tests pinning the discount boundary."""
+
+from ${PKG}.discount import discount
+
+
+def test_no_discount_up_to_ten_items() -> None:
+  """Ten items or fewer get no discount."""
+  assert discount(10) == 0.0
+  assert discount(1) == 0.0
+
+
+def test_ten_percent_above_ten_items() -> None:
+  """More than ten items get 10%."""
+  assert discount(11) == 0.1
+EOF
+  check --mutation
+  expect mutation-b "boundary tests kill the mutants" 0 "MUTATION PASSED"
+}
+
+scenario_mutation_c() {
+  fresh mutation-c
+  check --mutation
+  expect mutation-c "no source change means nothing to mutate" 0 \
+    "MUTATION PASSED: no changed source files"
+}
+
+scenario_hotspots() {
+  fresh hotspots
+  local round
+  for round in 1 2 3; do
+    printf '"""Feature module."""\n%s\n\nREVISION = %s\n' "${TANGLED}" "${round}" \
+      | write "src/${PKG}/feature.py"
+    git add -A
+    git commit -q --no-verify -m "chore: revision ${round}"
+  done
+  OUT="$(cd "${PROJECT}" && ./scripts/hotspots.sh 2>&1)"
+  CODE=$?
+  expect hotspots "hotspots ranks a churned, complex file first" 0 \
+    "\| 1 \| \`src/${PKG}/feature.py\` \| 3 \| 21 \| 63 \|" "\`tangled\` \(21\)"
+  [[ -f reports/hotspots.md ]] || { FAILURES+=("hotspots-file"); echo "FAIL  hotspots: no report file"; }
+}
+
 # The harness code must pass the harness's own rules, even though it lives outside src/.
 scenario_self() {
   fresh self
@@ -590,7 +672,7 @@ scenario_self() {
   expect self "harness code passes strict mypy, preview Ruff rules, complexipy, pydoclint" 0
 }
 
-ALL_SCENARIOS=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 15 16 17 18 19 20 21 22 23 24 25 post notice prepush delta self)
+ALL_SCENARIOS=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 15 16 17 18 19 20 21 22 23 24 25 post notice prepush delta mutation mutation_b mutation_c hotspots self)
 
 main() {
   generate

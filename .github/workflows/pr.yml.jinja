@@ -59,3 +59,36 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY" || true
 {%- endif %}
+{%- if enable_agent_harness %}
+
+  # Mutation testing on changed lines. Advisory for now: make it required once the survival
+  # rate on PRs is stable (see docs/agent-harness.md).
+  mutation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install {{ python_version }}
+
+      - name: Install dependencies
+        run: |
+          uv venv
+          uv pip install poetry
+          uv run poetry install
+
+      - name: Run mutation testing on changed lines
+        run: |
+          export HARNESS_BASE="$(git merge-base HEAD origin/{{ '${{ github.base_ref }}' }})"
+          uv run ./scripts/check.sh --mutation
+{%- endif %}
