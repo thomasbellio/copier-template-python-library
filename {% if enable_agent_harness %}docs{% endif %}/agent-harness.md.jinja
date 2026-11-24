@@ -1,0 +1,233 @@
+# Agent harness
+
+The agent harness runs maintainability checks on **new and changed code only**, and gives
+coding agents (and humans) fast, specific feedback. It never asks anyone to refactor code they
+did not touch. `AGENTS.md` tells agents how to work with it; this document explains how it
+works, how to tune it, and how to add it to an existing repository.
+
+## How it works
+
+### One entry point
+
+Every adapter ({% if enable_claude_adapter %}Claude Code hooks, {% endif %}lefthook, CI) calls the same script:
+
+| Command | Used by | What it does |
+|---|---|---|
+| `scripts/check.sh` | Stop hook, lefthook, CI, agents | Full gate on the changed set |
+| `scripts/check.sh --file <path>` | Post-edit hook | Fast checks (Ruff, complexipy, suppressions) for one file |
+| `scripts/check.sh --mutation` | CI job, on demand | Mutation testing on changed lines (slow) |
+| `scripts/check.sh --all` | Humans | Whole-codebase audit; report only, always exits 0 |
+| `scripts/check.sh --json` | Tooling | Every finding as JSON (the text report stops at 40) |
+| `scripts/check.sh --timings` | Humans | Per-tool timings on stderr |
+
+Exit codes: **0** passed, **1** a blocking finding, **3** the harness or a tool could not run.
+A missing tool, or a tool whose output cannot be parsed, is exit 3, never a silent pass.
+
+The implementation is `scripts/harness/`, standard library only. Each tool has one module in
+`scripts/harness/runners/`; independent runners run in parallel.
+
+### What "changed" means
+
+The base is the first of these that works:
+
+1. The `HARNESS_BASE` environment variable (CI sets it to the merge-base of the PR).
+2. `git merge-base HEAD origin/{{ default_branch }}`.
+3. `git merge-base HEAD {{ default_branch }}`.
+4. `HEAD`, so only uncommitted changes count.
+5. With no commits yet, the empty tree: everything is new.
+
+The changed set is the diff from the base to the **working tree** (committed, staged, unstaged
+and untracked `.py` files under `src/` and `tests/`).
+
+A finding is **in scope** when it is on an added or modified line, or anywhere inside a
+function or class whose span contains such a line (class-level findings such as coupling use
+the enclosing class). New files are entirely in scope. So touching a function makes you
+responsible for that function's findings, including old ones, and nothing else.
+
+Two checks cannot be scoped and always run on the whole project: import-linter contracts and
+import cycles.
+
+### Checks
+
+| Check | Tool | Threshold | Gate | Configured in |
+|---|---|---|---|---|
+| Cognitive complexity | complexipy | ≤ 15 per function | Block | `complexipy.toml` |
+| Cyclomatic complexity | Ruff `C901` | ≤ 10 | Block | `[tool.ruff.lint.mccabe]` |
+| Size and shape | Ruff `PLR09xx`, `PLR1702` | 5 args, 5 positional, 6 returns, 12 branches, 50 statements | Block | `[tool.ruff.lint.pylint]` |
+| Exception hygiene | Ruff `E722 BLE001 S110 S112 B904 B012 TRY002 TRY203 TRY400 TRY401` | 0 | Block | `harness.toml [ruff]` |
+| Docstring presence | Ruff `D100–D104 D106` | public names | Block | `harness.toml [ruff]` |
+| Docstring consistency | pydoclint ({{ docstring_style }} style) | 0 | Block | `[tool.pydoclint]` |
+| Type precision | mypy, strict | 0 errors | Block | `[tool.mypy]`, `harness.toml [mypy]` |
+| Suppressions | harness | code and `# reason:` required | Block | — |
+| Dead code | vulture | see below | Block / advisory | `harness.toml [vulture]`, `vulture_whitelist.py` |
+| Architecture contracts | import-linter | all kept | Block (whole project) | `.importlinter` |
+| Import cycles | pyscn | ≤ `allowed_cycles` (0) | Block (whole project) | `harness.toml [pyscn]` |
+| Class coupling (CBO) | pyscn | ≤ 7 | Block | `harness.toml [pyscn]` |
+| Class cohesion (LCOM4) | pyscn | > 5 blocks, > 2 advises | Block / advisory | `harness.toml [pyscn]` |
+| Structural clones | pyscn | similarity ≥ 0.80 | Advisory | `harness.toml [pyscn]` |
+| Changelog reminder | harness | `src/` changed, no `[Unreleased]` entry | Advisory | — |
+| Mutation survival | cosmic-ray | ≤ 20 % of executed mutants | CI job, advisory for now | `harness.toml [mutation]`, `cosmic-ray.toml` |
+| Churn × complexity | git + complexipy | top 10 | Weekly report | `scripts/hotspots.sh` |
+
+Details worth knowing:
+
+- **Ruff.** The harness runs Ruff with `--extend-select` and the rule list in `harness.toml`,
+  so it works even where `pyproject.toml` does not select those rules. `PLR0904`, `PLR0914`,
+  `PLR0916`, `PLR0917` and `PLR1702` are preview rules in the pinned Ruff; the harness enables
+  preview for its own run only, and only for those named rules. `ruff check .` in `build.sh`
+  never runs in preview mode.
+- **Dead code.** A library's public API looks unused from inside the package, so vulture runs
+  over `src`, `tests` and `vulture_whitelist.py` (tested API counts as used). Findings at
+  ≥ 80 % confidence block, as do unused private (`_name`) definitions; unused public names are
+  advisory. Unused local variables are rated 60 % by vulture, so in public code they are
+  advisory here, but Ruff `F841` in `build.sh` already blocks them.
+- **Suppression policy.** On added lines, `# type: ignore` and `# noqa` need a specific code,
+  and every `# type: ignore[...]`, `# noqa: ...`, `# pragma: no cover`, `# pragma: no mutate`
+  or `# complexipy: ignore` needs `# reason: <text>` on the same line or the line above. The
+  report counts suppressions added in the diff even when all are justified. pyscn has no
+  inline-ignore syntax, so there is nothing to police for it.
+- **Coupling and cohesion** skip dataclasses, `Protocol`s, enums, `NamedTuple`/`TypedDict`
+  and exception classes, which produce false positives.
+- **Clones** are reported once per duplicated region: overlapping pairs from the same
+  functions are merged.
+
+### Advisories
+
+Advisories never fail lefthook or CI.{% if enable_claude_adapter %} The Claude Code Stop hook
+blocks **once** when advisories are present, so the agent either fixes each one or justifies it
+in its final message; on the forced retry advisories are ignored.{% endif %} Agents without
+hooks see them when they run `scripts/check.sh`, as `AGENTS.md` requires.
+
+### Configuration agents must not change
+
+`harness.toml`, `complexipy.toml`, `.pyscn.toml`, `.importlinter`, `cosmic-ray.toml`,
+`vulture_whitelist.py`, `lefthook.yml`, `scripts/check.sh`, `scripts/harness/` and `.claude/`.
+The list lives in `scripts/harness/guarded.py`.{% if enable_claude_adapter %} The Claude Code
+PreToolUse hook asks you before an agent edits any of them.{% endif %} CI adds a notice to
+the PR summary when a PR changes one of them, or the `[tool.ruff]`, `[tool.mypy]` or
+`[tool.pydoclint]` settings in `pyproject.toml` (which is not guarded as a file, because
+agents legitimately edit dependencies).
+
+## Adapters
+{%- if enable_claude_adapter %}
+
+### Claude Code
+
+`.claude/settings.json` registers four hooks (stdlib Python, run with
+`uv run --no-sync python`):
+
+| Hook | Script | Behaviour |
+|---|---|---|
+| PostToolUse `Edit\|Write` | `post_edit.py` | `check.sh --file` on an edited `.py` file under `src/` or `tests/`. Findings: exit 2, shown to Claude. Harness error: exit 1, shown to you; the agent carries on |
+| Stop | `stop.py` | Skips when the changed set is unchanged since the last pass (`.harness/last-pass`). Otherwise runs the gate; on failures or advisories blocks once with the report and an instruction to fix only touched code. On the retry it never blocks: if the gate still fails you get a `systemMessage` |
+| PreToolUse `Edit\|Write` | `guard_config.py` | Asks you before an agent edits harness configuration |
+| PreToolUse `Bash` | `guard_git.py` | Asks you before `git add/commit/push/tag/merge/rebase/cherry-pick/revert/am` or `reset/restore/clean/stash` and path checkouts. Read-only commands pass. Commands are parsed (`git -C`, `&&`, `bash -c`, `env`, aliases); when parsing is uncertain it asks |
+
+`CLAUDE.md` contains `@AGENTS.md`. Recent Claude Code versions read `AGENTS.md` themselves when
+there is no `CLAUDE.md`; keeping the import never makes it read the file twice.
+{%- endif %}
+
+### Adding another agent
+
+Wire the agent's post-edit event to `scripts/check.sh --file <path>` and its end-of-task event
+to `scripts/check.sh`, translating exit code 1 into whatever that agent treats as blocking
+feedback, and exit code 3 into a message for the human (never a block). Agents with no hook
+system rely on `AGENTS.md` and the lefthook hooks.
+
+### lefthook
+
+- `pre-commit` runs `scripts/build.sh`, which ends with `scripts/check.sh`.
+- `pre-push` runs `scripts/check.sh` again against the merge-base, a second net for commits
+  made with `--no-verify`.
+
+### GitHub Actions
+
+- `pr.yml` checks out full history, sets `HARNESS_BASE` to the merge-base with the target
+  branch, adds the configuration notice and a non-blocking cognitive-complexity diff
+  (`complexipy --diff-only`) to the job summary, and runs `build.sh`.
+- The `mutation` job runs `scripts/check.sh --mutation` with a 20-minute timeout. It is
+  `continue-on-error` for now. **Make it required** (remove `continue-on-error` and add it to
+  branch protection) once the survival rate on PRs has been stable for a few weeks.
+- `push.yml` runs the build on the default branch, where the changed set is empty.
+- `hotspots.yml` runs weekly and on demand, and uploads `reports/hotspots.md`.
+
+## Mutation testing
+
+`scripts/check.sh --mutation` runs cosmic-ray on lines changed since the base, including new,
+untracked files. cosmic-ray's git filter only sees tracked files and a fixed branch, so the
+harness points it at the resolved base and lists new files in a temporary git index
+(`.harness/mutation.index`, intent-to-add entries; your real index is never touched). The
+survival rate counts executed mutants only. Each surviving mutant is reported with its line and
+the change that went unnoticed, so the missing assertion is easy to write.
+
+cosmic-ray **mutates source files in place** while it runs tests and restores them afterwards.
+If you interrupt a run, check `git diff` and restore any mutated file.
+
+## Hotspots
+
+`scripts/hotspots.sh [--days 90] [--top 10]` ranks files under `src/` by commits in the window
+× total cognitive complexity and writes `reports/hotspots.md`, with the three most complex
+functions per file. Use it to prioritise deliberate refactoring; it never fails. For trends,
+keep each weekly report and compare them.
+
+## Known gaps
+
+- Ruff does not flag a narrow handler that returns a default (`except KeyError: return None`);
+  that is often correct and is left to review.
+- Neither tool can tell whether a docstring is useful; `AGENTS.md` sets the expectation.
+- Deleting lines does not, by itself, put the surrounding function in scope.
+- mypy checks the package; type errors in `tests/` are not gated (as in `build.sh`).
+{%- if enable_claude_adapter %}
+- `guard_config.py` sees Edit and Write only; an agent could still change a guarded file through
+  a shell command. The CI notice is the backstop.
+- Claude Code treats a crashing PreToolUse hook as non-blocking, so if `uv` or Python is
+  missing the guards stop guarding.
+{%- endif %}
+- Every new public function without a test yields an "unused" advisory until it is tested.
+
+## Future work: semantic duplication
+
+pyscn finds structural clones. Code that does the same job with a different shape is caught
+only by the `AGENTS.md` rule to search before writing. An LLM review step or embedding search
+over function bodies could close that gap; it is deliberately out of scope for now.
+
+## Retrofitting an existing repository
+
+Easiest: generate a scratch project with this template, using your package name and default
+branch, and copy the harness files from it, so the names are already right.
+
+1. **Copy files:** `AGENTS.md`, `CLAUDE.md`, `harness.toml`, `complexipy.toml`,
+   `.pyscn.toml`, `.importlinter`, `cosmic-ray.toml`, `vulture_whitelist.py`, `.claude/`,
+   `scripts/check.sh`, `scripts/hotspots.sh`, `scripts/harness/`, `docs/agent-harness.md`,
+   `docs/troubleshooting.md`, `docs/adr/0000-template.md` and
+   `.github/workflows/hotspots.yml`. Add a `CHANGELOG.md` in Keep a Changelog format if the
+   repository has none. Keep the executable bit on the scripts.
+2. **Edit names** if you did not copy from a scratch project: `package` and `default_branch` in
+   `harness.toml`, `root_packages` in `.importlinter`, `module-path` and `branch` in
+   `cosmic-ray.toml`.
+3. **Add dev dependencies:** `complexipy` (with `python = "<3.16"`, which complexipy declares),
+   `pyscn`, `import-linter`, `vulture`, `cosmic-ray`, `pydoclint`.
+4. **Merge config into `pyproject.toml`:** `[tool.ruff.lint.mccabe]`,
+   `[tool.ruff.lint.pylint]`, `[tool.ruff.lint.pydocstyle]` (omit for sphinx style, which Ruff
+   does not support), the `"tests/**"` entry of `[tool.ruff.lint.per-file-ignores]` (so tests
+   need no docstrings) and `[tool.pydoclint]`. Do **not** add the harness rules to `select`;
+   the harness adds them itself, so the existing whole-project lint is unaffected. Do not turn
+   on strict mypy globally unless the project is already clean: put the strict flags in
+   `harness.toml` under `[mypy] flags` (an example is in the file), so they apply to changed
+   code only.
+5. **Grandfather whole-project checks:** run `lint-imports` and add current violations to
+   each contract's `ignore_imports`; run `scripts/check.sh --all`, read the cycle count from the
+   `import-cycle` findings, and set `allowed_cycles` in `harness.toml` to it. Both then act as
+   ratchets: lower them as you fix things.
+6. **Seed the vulture whitelist:** `vulture src tests --make-whitelist`, then review every entry.
+7. **Wire the adapters:** add `./scripts/check.sh` to the end of your build script (or as a
+   lefthook `pre-commit` command), add the `pre-push` command, and apply the CI changes above
+   (`fetch-depth: 0`, `HARNESS_BASE`, the notice, complexity summary and mutation job).
+8. **Run `scripts/check.sh --all`** once to see the size of the existing debt. It is a report
+   only; do not start a clean-up because of it.
+9. **Append `.gitignore` entries:** `.harness/`, `.complexipy_cache/`,
+   `.import_linter_cache/`, `.pyscn/`, `reports/`, `.claude/settings.local.json`. Keep
+   `.claude/settings.json` committed.
+
+Projects generated from this template before it produced `.copier-answers.yml` cannot use
+`copier update`; retrofit them with this checklist instead.
