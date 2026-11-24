@@ -1,0 +1,23 @@
+# Agent harness settings. See docs/agent-harness.md.
+# Agents must not edit this file to get a passing result; propose a change instead.
+
+[harness]
+default_branch = "{{ default_branch }}"
+package = "{{ project_name }}"
+# Python files under these directories are checked.
+scope_dirs = ["src", "tests"]
+# Text reports stop after this many findings; --json always lists all of them.
+max_findings = 40
+
+[ruff]
+# Checked on changed code on top of the project's own Ruff selection.
+# Thresholds live in pyproject.toml under [tool.ruff.lint.mccabe] and [tool.ruff.lint.pylint].
+rules = [
+  "C901",                                             # cyclomatic complexity
+  "PLR0911", "PLR0912", "PLR0913", "PLR0915",         # size and shape
+  "E722", "BLE001", "S110", "S112", "B904", "B012",   # exception hygiene
+  "TRY002", "TRY203", "TRY400", "TRY401",
+  "D100", "D101", "D102", "D103", "D104", "D106",     # docstring presence
+]
+# Preview-only in the pinned Ruff. Enabled for the harness run only, never project-wide.
+preview_rules = ["PLR0904", "PLR0914", "PLR0916", "PLR0917", "PLR1702"]

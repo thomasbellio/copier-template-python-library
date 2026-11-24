@@ -6,7 +6,9 @@ version="0.0.1"
 name = "{{ project_name }}"
 version = "0.1.0"
 description = "{{ project_description }}"
-authors = ["{{ author_name }} <{{ author_email }}>"]
+{%- if author_name %}
+authors = ["{{ author_name }}{% if author_email %} <{{ author_email }}>{% endif %}"]
+{%- endif %}
 readme = "README.md"
 packages = [{include = "{{ project_name }}", from = "src"}]
 
@@ -19,6 +21,9 @@ mypy = "^1.19.1"
 ruff = "^0.14.14"
 lefthook="2.0.15"
 python-lsp-server = "^1.14.0"
+{%- if enable_agent_harness %}
+complexipy = { version = "^9.0.0", python = "<3.16" }  # upper bound is declared by complexipy
+{%- endif %}
 
 [build-system]
 requires = ["poetry-core"]
@@ -38,11 +43,49 @@ select = [
   "B",   # flake8-bugbear
   "C4",  # flake8-comprehensions
   "UP",  # pyupgrade
+{%- if enable_agent_harness %}
+  # Agent harness rules; harness.toml lists the full set checked on changed code.
+  "C901",    # cyclomatic complexity
+  "PLR09",   # size and shape (stable pylint rules)
+  "BLE001",  # blind except
+  "S110",    # try-except-pass
+  "S112",    # try-except-continue
+  "TRY002",  # raise vanilla Exception
+  "TRY203",  # useless try-except
+  "TRY400",  # logging.error in handler
+  "TRY401",  # verbose log message
+  "D100",    # docstring presence: module
+  "D101",    # class
+  "D102",    # method
+  "D103",    # function
+  "D104",    # package
+  "D106",    # nested class
+{%- endif %}
 ]
 ignore = [
   "E501",  # line too long, handled by formatter
   "B008",  # do not perform function calls in argument defaults
 ]
+{%- if enable_agent_harness %}
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-args = 5
+max-returns = 6
+max-branches = 12
+max-statements = 50
+max-positional-args = 5
+{%- if docstring_style != "sphinx" %}
+
+[tool.ruff.lint.pydocstyle]
+convention = "{{ docstring_style }}"
+{%- endif %}
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["PLR0913", "PLR0915", "PLR0917", "D", "S110"]
+{%- endif %}
 
 [tool.ruff.format]
 quote-style = "double"

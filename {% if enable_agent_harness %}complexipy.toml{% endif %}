@@ -1,0 +1,4 @@
+# Cognitive complexity limits, read by complexipy and the agent harness.
+paths = ["src"]
+max-complexity-allowed = 15
+exclude = ["tests/**"]
