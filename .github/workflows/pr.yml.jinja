@@ -14,6 +14,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+{%- if enable_agent_harness %}
+        with:
+          # Full history, so the agent harness can find the merge-base with the target branch.
+          fetch-depth: 0
+{%- endif %}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -29,6 +34,28 @@ jobs:
           uv pip install poetry
           uv run poetry install
 
+{%- if enable_agent_harness %}
+
+      - name: Find the merge-base for the agent harness
+        run: echo "HARNESS_BASE=$(git merge-base HEAD origin/{{ '${{ github.base_ref }}' }})" >> "$GITHUB_ENV"
+
+      - name: Flag agent harness configuration changes
+        run: PYTHONPATH=scripts uv run python -m harness.ci_notice
+{%- endif %}
+
       - name: Run build checks
         run: |
           uv run ./scripts/build.sh
+{%- if enable_agent_harness %}
+
+      - name: Summarise cognitive complexity changes
+        if: always()
+        run: |
+          {
+            echo "### Cognitive complexity changes (non-blocking)"
+            echo
+            echo '```'
+            uv run complexipy src --diff-only "$HARNESS_BASE" --color no | sed -n '/Complexity diff/,$p'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY" || true
+{%- endif %}

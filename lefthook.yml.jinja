@@ -7,3 +7,11 @@ pre-commit:
     build:
       run: uv run ./scripts/build.sh
       stage_fixed: true
+{%- if enable_agent_harness %}
+
+# Second net for commits made with --no-verify: re-check everything since the merge-base.
+pre-push:
+  commands:
+    harness:
+      run: uv run ./scripts/check.sh
+{%- endif %}

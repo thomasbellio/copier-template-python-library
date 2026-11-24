@@ -11,5 +11,10 @@ mypy src/{{ project_name }}
 
 echo "🧪 Running tests..."
 pytest
+{%- if enable_agent_harness %}
+
+echo "🧭 Running agent harness checks on changed code..."
+./scripts/check.sh
+{%- endif %}
 
 echo "✅ All checks passed!"
