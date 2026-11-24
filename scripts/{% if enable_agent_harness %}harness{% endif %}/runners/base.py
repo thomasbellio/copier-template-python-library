@@ -5,7 +5,7 @@ the orchestrator applies the scope filter, so runners report everything the tool
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from harness.config import Config
@@ -39,10 +39,18 @@ class Context:
 
 
 @dataclass(frozen=True)
+class Outcome:
+  """What a runner found, plus notes for the report header (such as counts)."""
+
+  findings: list[Finding] = field(default_factory=list)
+  notes: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class Runner:
   """A named check: its executables, whether it is fast enough for --file mode, and run."""
 
   name: str
   executables: tuple[str, ...]
   fast: bool
-  run: Callable[[Context], list[Finding]]
+  run: Callable[[Context], Outcome]

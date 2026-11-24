@@ -1,0 +1,6 @@
+"""Names vulture should treat as used. Owned by the project.
+
+Add a name here only when it is used in a way vulture cannot see (for example, called by a
+framework or looked up dynamically), with a comment saying why. Regenerate candidates with
+`vulture src tests --make-whitelist` and review every entry before keeping it.
+"""

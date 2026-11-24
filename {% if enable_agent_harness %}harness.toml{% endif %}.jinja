@@ -21,3 +21,32 @@ rules = [
 ]
 # Preview-only in the pinned Ruff. Enabled for the harness run only, never project-wide.
 preview_rules = ["PLR0904", "PLR0914", "PLR0916", "PLR0917", "PLR1702"]
+
+[mypy]
+# Extra command-line flags for the harness's mypy run. New projects keep strict settings in
+# pyproject.toml, so this is empty. A retrofitted project that is not yet strict-clean puts
+# the strict flags here instead, so they apply to changed code only:
+#   flags = ["--strict", "--warn-unreachable", "--disallow-any-explicit",
+#            "--enable-error-code", "ignore-without-code"]
+flags = []
+
+[vulture]
+# Findings below this confidence are not reported at all.
+min_confidence = 60
+# At or above this confidence a finding blocks. Below it, only unused private names
+# (leading underscore) block; unused public names are advisory.
+block_confidence = 80
+
+[pyscn]
+# Import cycles allowed project-wide. Retrofitted projects set this to the current count
+# and lower it as cycles are removed; it acts as a ratchet.
+allowed_cycles = 0
+# Coupling between objects: block a touched class coupled to more classes than this
+# (the top of pyscn's default medium band).
+max_cbo = 7
+# LCOM4 bands, matching pyscn's defaults: above lcom_block_above is high risk and blocks;
+# above lcom_advise_above is medium risk and is advisory.
+lcom_block_above = 5
+lcom_advise_above = 2
+# Structural clone pairs at or above this similarity are reported as advisories.
+clone_similarity = 0.80
