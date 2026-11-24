@@ -340,6 +340,16 @@ scenario_10() {
   fi
 }
 
+scenario_14() {
+  fresh 14
+  printf '%s' "${SIMPLE_MODULE}" | write "src/${PKG}/greeting.py"
+  mv .venv/bin/vulture .venv/bin/vulture.hidden
+  check
+  mv .venv/bin/vulture.hidden .venv/bin/vulture
+  expect 14 "a missing tool is a harness error, never a pass" 3 \
+    "HARNESS ERROR: required tool 'vulture' was not found" "uv run poetry install" "!HARNESS PASSED"
+}
+
 scenario_19() {
   fresh 19
   write "src/${PKG}/feature.py" <<'EOF'
@@ -703,7 +713,7 @@ scenario_self() {
   expect self "harness code passes strict mypy, preview Ruff rules, complexipy, pydoclint" 0
 }
 
-ALL_SCENARIOS=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 15 16 17 18 19 20 21 22 23 24 25 post notice prepush delta mutation mutation_b mutation_c hotspots update self)
+ALL_SCENARIOS=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 post notice prepush delta mutation mutation_b mutation_c hotspots update self)
 
 main() {
   generate
