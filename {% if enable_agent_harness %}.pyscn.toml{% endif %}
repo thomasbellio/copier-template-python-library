@@ -1,0 +1,39 @@
+# pyscn configuration, trimmed from `pyscn init` (pyscn 1.33.2).
+# The agent harness uses pyscn for import cycles, class coupling (CBO), class cohesion
+# (LCOM4) and clone detection; gate thresholds live in harness.toml. Complexity and dead
+# code belong to complexipy and vulture, and architecture rules to import-linter, so those
+# pyscn analyses are switched off here.
+
+[analysis]
+recursive = true
+follow_symlinks = false
+include_patterns = ["**/*.py"]
+exclude_patterns = [
+    "**/test_*.py",
+    "**/*_test.py",
+    "**/__pycache__/*",
+    "**/*.pyc",
+    ".venv/",
+]
+
+[complexity]
+enabled = false
+
+[dead_code]
+enabled = false
+
+[clones]
+min_lines = 8                    # Minimum lines for clone candidates
+min_nodes = 20                   # Minimum AST nodes for clone candidates
+ignore_literals = false
+ignore_identifiers = false
+
+[cbo]
+low_threshold = 3
+medium_threshold = 7             # harness.toml [pyscn] max_cbo should match this
+include_builtins = false
+include_imports = true
+
+[architecture]
+enabled = false                  # import-linter owns architecture contracts
+validate_layers = false

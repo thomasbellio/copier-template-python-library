@@ -23,6 +23,10 @@ lefthook="2.0.15"
 python-lsp-server = "^1.14.0"
 {%- if enable_agent_harness %}
 complexipy = { version = "^9.0.0", python = "<3.16" }  # upper bound is declared by complexipy
+pyscn = "^1.33.2"
+import-linter = "^2.17"
+vulture = "^2.16"
+pydoclint = "^0.12.0"
 {%- endif %}
 
 [build-system]
@@ -95,6 +99,25 @@ line-ending = "auto"
 
 [tool.mypy]
 python_version = "{{ min_python_version }}"
+{%- if enable_agent_harness %}
+strict = true
+warn_unreachable = true
+disallow_any_explicit = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_any_explicit = false
+
+[tool.pydoclint]
+style = "{{ docstring_style }}"
+arg-type-hints-in-docstring = false
+check-return-types = false
+check-yield-types = false
+skip-checking-short-docstrings = true
+exclude = "tests/"
+{%- else %}
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -109,6 +132,7 @@ strict_equality = true
 [[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
+{%- endif %}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

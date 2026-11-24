@@ -15,7 +15,7 @@ from pathlib import Path
 from harness.config import Config, load_config
 from harness.errors import HarnessError
 from harness.report import Finding, Summary, counts, render_json, render_text
-from harness.runners import RUNNERS, Context, Runner
+from harness.runners import RUNNERS, Context, Outcome, Runner
 from harness.scope import ChangeSet, compute_changes, git, resolve_base, whole_project
 from harness.tools import find_tool
 
@@ -47,34 +47,35 @@ def build_changes(config: Config, args: argparse.Namespace) -> ChangeSet:
   return changes
 
 
-def _timed(runner: Runner, ctx: Context) -> tuple[list[Finding], float]:
+def _timed(runner: Runner, ctx: Context) -> tuple[Outcome, float]:
   """Run one runner and measure its wall-clock time."""
   started = time.monotonic()
-  findings = runner.run(ctx)
-  return findings, time.monotonic() - started
+  outcome = runner.run(ctx)
+  return outcome, time.monotonic() - started
 
 
-def execute(runners: Sequence[Runner], ctx: Context) -> tuple[list[Finding], dict[str, float]]:
-  """Run every runner in parallel; collect findings, timings and errors from all of them."""
+def execute(runners: Sequence[Runner], ctx: Context) -> tuple[Outcome, dict[str, float]]:
+  """Run every runner in parallel; collect findings, notes, timings and errors from all."""
   for runner in runners:
     for executable in runner.executables:
       find_tool(executable)
-  findings: list[Finding] = []
+  combined = Outcome()
   timings: dict[str, float] = {}
   errors: list[str] = []
   with ThreadPoolExecutor(max_workers=max(1, len(runners))) as pool:
     futures = {runner.name: pool.submit(_timed, runner, ctx) for runner in runners}
     for name, future in futures.items():
       try:
-        result, elapsed = future.result()
+        outcome, elapsed = future.result()
       except HarnessError as err:
         errors.append(f"{name}: {err}")
         continue
-      findings.extend(result)
+      combined.findings.extend(outcome.findings)
+      combined.notes.extend(outcome.notes)
       timings[name] = elapsed
   if errors:
     raise HarnessError("\n".join(errors))
-  return findings, timings
+  return combined, timings
 
 
 def in_scope(findings: Sequence[Finding], changes: ChangeSet) -> list[Finding]:
@@ -102,9 +103,9 @@ def run(args: argparse.Namespace) -> int:
     return EXIT_PASS
   runners = [r for r in RUNNERS if r.fast or not args.file]
   ctx = Context(root=root, config=config, changes=changes, file_mode=bool(args.file))
-  raw, timings = execute(runners, ctx)
-  findings = in_scope(raw, changes)
-  summary = Summary(changes=changes)
+  outcome, timings = execute(runners, ctx)
+  findings = in_scope(outcome.findings, changes)
+  summary = Summary(changes=changes, notes=tuple(outcome.notes))
   if args.json:
     sys.stdout.write(render_json(findings, summary))
   else:

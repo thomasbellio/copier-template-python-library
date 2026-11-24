@@ -165,7 +165,7 @@ class ChangeSet:
     return ChangeSet(self.base, kept, self.whole_project)
 
 
-def _parse_diff(diff: str) -> dict[str, tuple[set[int], bool]]:
+def parse_diff(diff: str) -> dict[str, tuple[set[int], bool]]:
   """Map each file in a -U0 diff to (added or modified lines, whether it is new)."""
   result: dict[str, tuple[set[int], bool]] = {}
   current: str | None = None
@@ -211,7 +211,7 @@ def compute_changes(base: Base, scope_dirs: tuple[str, ...]) -> ChangeSet:
   diff = git(
     "diff", "-U0", "--no-color", "--no-ext-diff", "--no-textconv", "-M", base.ref, "--", *scope_dirs
   )
-  parsed = _parse_diff(diff)
+  parsed = parse_diff(diff)
   for path in untracked_files(scope_dirs):
     parsed[path] = (set(), True)
   files: dict[str, FileChange] = {}

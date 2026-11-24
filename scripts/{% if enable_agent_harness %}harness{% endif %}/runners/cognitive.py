@@ -6,7 +6,7 @@ from collections.abc import Mapping
 
 from harness.errors import HarnessError
 from harness.report import Finding
-from harness.runners.base import Context, Runner
+from harness.runners.base import Context, Outcome, Runner
 from harness.tools import find_tool, run_tool
 
 CONFIG_FILE = "complexipy.toml"
@@ -36,7 +36,7 @@ def _hint(entry: Mapping[str, object]) -> str:
   )
 
 
-def run(ctx: Context) -> list[Finding]:
+def run(ctx: Context) -> Outcome:
   """Report functions whose cognitive complexity is over the threshold."""
   limit = max_complexity(ctx)
   cmd = [find_tool("complexipy"), *ctx.paths, "--output-format", "json", "--output", "-"]
@@ -60,7 +60,7 @@ def run(ctx: Context) -> list[Finding]:
         fix=_hint(entry),
       )
     )
-  return findings
+  return Outcome(findings)
 
 
 RUNNER = Runner(name="complexipy", executables=("complexipy",), fast=True, run=run)

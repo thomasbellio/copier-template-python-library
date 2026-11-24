@@ -192,7 +192,257 @@ scenario_13() {
   fi
 }
 
-ALL_SCENARIOS=(0 1 2 3 11 12 13)
+scenario_4() {
+  fresh 4
+  write "src/${PKG}/feature.py" <<'EOF'
+"""Feature module."""
+
+
+def risky() -> None:
+  """Try something and ignore any failure."""
+  try:
+    print("working")
+  except Exception:
+    pass
+EOF
+  check
+  expect 4 "except Exception: pass" 1 "\[BLE001\]" "\[S110\]"
+}
+
+scenario_5() {
+  fresh 5
+  write "src/${PKG}/feature.py" <<'EOF'
+"""Feature module."""
+
+
+def _unused() -> int:
+  """Return one."""
+  return 1
+EOF
+  check
+  expect 5 "unused private helper" 1 "\[dead-code\] unused function '_unused'"
+}
+
+scenario_6() {
+  fresh 6
+  write "src/${PKG}/feature.py" <<'EOF'
+"""Feature module."""
+
+
+def scale(value: int) -> int:
+  """Scale a value.
+
+  Args:
+    value: The value to scale.
+    factor: An argument that does not exist.
+
+  Returns:
+    The scaled value.
+  """
+  return value * 2
+EOF
+  check
+  expect 6 "docstring lists an argument that does not exist" 1 "\[DOC10[0-9]\]"
+}
+
+scenario_7() {
+  fresh 7
+  write "src/${PKG}/feature.py" <<'EOF'
+"""Feature module."""
+
+from typing import Any
+
+
+def describe(x: Any) -> str:
+  """Describe a value."""
+  return repr(x)
+EOF
+  check
+  expect 7 "explicit Any" 1 "\[mypy:explicit-any\]"
+}
+
+scenario_8() {
+  fresh 8
+  write "src/${PKG}/feature.py" <<'EOF'
+"""Feature module."""
+
+
+def answer() -> int:
+  """Return the answer."""
+  return "42"  # type: ignore
+EOF
+  check
+  expect 8 "bare type: ignore" 1 "\[bare-type-ignore\]"
+}
+
+scenario_9() {
+  fresh 9
+  write "src/${PKG}/feature.py" <<'EOF'
+"""Feature module."""
+
+import tests
+
+
+def suite_name() -> str:
+  """Name of the test package."""
+  return tests.__name__
+EOF
+  check
+  expect 9 "import breaking the shipped forbidden contract" 1 "\[import-contract\].*-> tests"
+}
+
+ORDERS='
+
+def order_total(items: list[tuple[str, float, int]]) -> float:
+  """Total an order, applying a bulk discount per line."""
+  result = 0.0
+  for name, price, qty in items:
+    if not name:
+      continue
+    if qty <= 0:
+      raise ValueError(name)
+    discount = 0.1 if qty > 10 else 0.0
+    line = price * qty * (1 - discount)
+    result += round(line, 2)
+  return result
+
+
+def invoice_total(entries: list[tuple[str, float, int]]) -> float:
+  """Total an invoice, applying a bulk rebate per entry."""
+  acc = 0.0
+  for label, cost, count in entries:
+    if not label:
+      continue
+    if count <= 0:
+      raise ValueError(label)
+    rebate = 0.1 if count > 10 else 0.0
+    amount = cost * count * (1 - rebate)
+    acc += round(amount, 2)
+  return acc
+'
+
+add_changelog_entry() {
+  sed -i "0,/^- Initial project setup$/s//- Initial project setup\n- $1/" CHANGELOG.md
+}
+
+scenario_10() {
+  fresh 10
+  printf '"""Order maths."""\n%s' "${ORDERS}" | write "src/${PKG}/orders.py"
+  add_changelog_entry "Order and invoice totals"
+  check
+  expect 10 "near-identical functions give one clone advisory" 0 "HARNESS PASSED" "\[clone\]" \
+    "!\[changelog\]"
+  local clones
+  clones=$(grep -c "\[clone\]" <<<"${OUT}")
+  if ((clones != 1)); then
+    FAILURES+=("10-count")
+    echo "FAIL  10: expected exactly one clone advisory, got ${clones}"
+  fi
+}
+
+scenario_19() {
+  fresh 19
+  write "src/${PKG}/feature.py" <<'EOF'
+"""Feature module."""
+
+
+def undocumented(value: int) -> int:
+  return value + 1
+EOF
+  check
+  expect 19 "public function without a docstring" 1 "\[D103\]"
+}
+
+scenario_20() {
+  fresh 20
+  write "src/${PKG}/feature.py" <<'EOF'
+"""Feature module."""
+
+
+def _helper(value: int) -> int:
+  return value + 1
+
+
+def increment(value: int) -> int:
+  """Add one to a value."""
+  return _helper(value)
+EOF
+  check
+  expect 20 "private helper without a docstring" 0 "HARNESS PASSED" "!\[D10[0-9]\]"
+}
+
+scenario_21() {
+  fresh 21
+  write "src/${PKG}/cli.py" <<'EOF'
+"""Command-line entry point."""
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def main() -> int:
+  """Run the command and turn any failure into an exit code."""
+  try:
+    return run()
+  except Exception:  # noqa: BLE001  # reason: top-level CLI boundary, error is logged
+    logger.exception("command failed")
+    return 1
+
+
+def run() -> int:
+  """Do the work."""
+  return 0
+EOF
+  check
+  expect 21 "justified broad handler" 0 "HARNESS PASSED" \
+    "Suppressions added in this diff: 1 \(all justified\)"
+}
+
+SIMPLE_MODULE='"""Greeting helpers."""
+
+
+def greet(name: str) -> str:
+  """Return a greeting for a name."""
+  return f"Hello, {name}"
+'
+
+scenario_22() {
+  fresh 22
+  printf '%s' "${SIMPLE_MODULE}" | write "src/${PKG}/greeting.py"
+  check
+  expect 22 "src change without a changelog entry" 0 "HARNESS PASSED" "\[changelog\]"
+}
+
+scenario_23() {
+  fresh 23
+  printf '%s' "${SIMPLE_MODULE}" | write "src/${PKG}/greeting.py"
+  add_changelog_entry "A greeting helper"
+  check
+  expect 23 "src change with a changelog entry" 0 "HARNESS PASSED" "!\[changelog\]"
+}
+
+# The harness code must pass the harness's own rules, even though it lives outside src/.
+scenario_self() {
+  fresh self
+  local bin=".venv/bin" problems=0 preview="PLR0904,PLR0914,PLR0916,PLR0917,PLR1702"
+  OUT="$(
+    {
+      MYPYPATH=scripts "${bin}/mypy" --strict --warn-unreachable --disallow-any-explicit \
+        --enable-error-code ignore-without-code --enable-error-code redundant-expr \
+        --enable-error-code truthy-bool -p harness || echo "SELF-FAIL mypy"
+      "${bin}/ruff" check --preview --config 'lint.explicit-preview-rules = true' \
+        --extend-select "${preview}" scripts || echo "SELF-FAIL ruff"
+      "${bin}/complexipy" scripts --max-complexity-allowed 15 --quiet || echo "SELF-FAIL complexipy"
+      "${bin}/pydoclint" --config=pyproject.toml --quiet scripts 2>&1 || echo "SELF-FAIL pydoclint"
+    } 2>&1
+  )"
+  CODE=0
+  grep -q "SELF-FAIL" <<<"${OUT}" && CODE=1
+  expect self "harness code passes strict mypy, preview Ruff rules, complexipy, pydoclint" 0
+}
+
+ALL_SCENARIOS=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 19 20 21 22 23 self)
 
 main() {
   generate

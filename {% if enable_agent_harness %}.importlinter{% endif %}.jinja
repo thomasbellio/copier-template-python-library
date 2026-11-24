@@ -1,0 +1,44 @@
+# Architecture contracts, checked on the whole project by the agent harness (lint-imports).
+# This file is owned by the project: add contracts as the package grows sub-packages.
+# Agents must not edit it to make the gate pass. See https://import-linter.readthedocs.io
+
+[importlinter]
+root_packages =
+    {{ project_name }}
+    tests
+
+[importlinter:contract:package-independent-of-tests]
+name = The package never imports from the test suite
+type = forbidden
+source_modules =
+    {{ project_name }}
+forbidden_modules =
+    tests
+
+# Examples. Uncomment and adapt once the package has sub-packages.
+#
+# Higher layers may import lower ones, never the reverse:
+# [importlinter:contract:layers]
+# name = Layered architecture
+# type = layers
+# layers =
+#     {{ project_name }}.cli
+#     {{ project_name }}.services
+#     {{ project_name }}.domain
+#
+# A module that must not depend on another:
+# [importlinter:contract:domain-is-pure]
+# name = The domain does not import the I/O adapters
+# type = forbidden
+# source_modules =
+#     {{ project_name }}.domain
+# forbidden_modules =
+#     {{ project_name }}.adapters
+#
+# Sibling modules that must stay independent of each other:
+# [importlinter:contract:independent-plugins]
+# name = Plugins are independent
+# type = independence
+# modules =
+#     {{ project_name }}.plugins.alpha
+#     {{ project_name }}.plugins.beta

@@ -40,6 +40,13 @@ FIX_HINTS: dict[str, str] = {
   "D104": "Add a docstring to the package's __init__.py.",
   "D106": "Add a docstring to the nested class.",
   "syntax-error": "Fix the syntax error before anything else.",
+  "bare-type-ignore": "Fix the type error. If you must ignore it, name the code: "
+  "`# type: ignore[code]  # reason: <why>`.",
+  "bare-noqa": "Fix the finding. If you must suppress it, name the rule: "
+  "`# noqa: CODE  # reason: <why>`.",
+  "unjustified-suppression": "Add `# reason: <why>` on this line or the line above, "
+  "or remove the suppression and fix the finding.",
+  "changelog": "Add a line under [Unreleased], or explain in your final message why none is needed.",
 }
 
 ADVISORY_HEADER = "ADVISORY (review once, then fix or justify in your final message)"

@@ -4,7 +4,7 @@ import json
 
 from harness.errors import HarnessError
 from harness.report import Finding
-from harness.runners.base import Context, Runner
+from harness.runners.base import Context, Outcome, Runner
 from harness.tools import find_tool, run_tool
 
 
@@ -21,7 +21,7 @@ def _command(ctx: Context) -> list[str]:
   return cmd
 
 
-def run(ctx: Context) -> list[Finding]:
+def run(ctx: Context) -> Outcome:
   """Run ruff with the harness rules and keep only those rules' findings."""
   wanted = {*ctx.config.strings("ruff", "rules"), *ctx.config.strings("ruff", "preview_rules")}
   try:
@@ -42,7 +42,7 @@ def run(ctx: Context) -> list[Finding]:
         tool="ruff",
       )
     )
-  return findings
+  return Outcome(findings)
 
 
 RUNNER = Runner(name="ruff", executables=("ruff",), fast=True, run=run)
