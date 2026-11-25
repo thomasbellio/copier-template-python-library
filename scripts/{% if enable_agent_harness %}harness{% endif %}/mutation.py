@@ -134,6 +134,7 @@ def execute_session(base_ref: str, scope_dirs: tuple[str, ...]) -> str:
   run_step([find_tool("cr-filter-pragma"), str(SESSION)], path_env)
   git_env = filter_environment(scope_dirs) | {"PATH": path_env["PATH"]}
   run_step([find_tool("cr-filter-git"), "--config", config_path, str(SESSION)], git_env)
+  run_step([sys.executable, "-m", "harness.annotation_filter", str(SESSION)], path_env)
   run_step([tool, "exec", config_path, str(SESSION)], path_env)
   code, stdout, stderr = run_status([find_tool("cr-report"), "--show-diff", str(SESSION)])
   if code != 0:
